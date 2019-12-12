@@ -4,10 +4,10 @@
 name = "rspm-cli"
 version = "0.1.0"
 dependencies = [
- "rspm-lib 0.1.0",
+ "rspm-config 0.1.0",
 ]
 
 [[package]]
-name = "rspm-lib"
+name = "rspm-config"
 version = "0.1.0"
 

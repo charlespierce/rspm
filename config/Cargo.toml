@@ -1,5 +1,5 @@
 [package]
-name = "rspm-lib"
+name = "rspm-config"
 version = "0.1.0"
 authors = ["Chuck Pierce <cpierce.grad@gmail.com>"]
 edition = "2018"
