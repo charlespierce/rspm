@@ -42,6 +42,65 @@ impl<C: Iterator<Item = char>> Parser<C> {
         }
     }
 
+    fn parse_line_until(&mut self, end: &[char]) -> (bool, String) {
+        let mut value = String::new();
+        let mut escape = false;
+
+        // TODO: Handle more advanced escaping
+        // Also handle quoted comment strings (i.e. "Hello;Stuff" shouldn't be cut off at the ';')
+
+        let found = loop {
+            if escape {
+                match self.ch {
+                    None | Some('\r') | Some('\n') => {
+                        break false;
+                    }
+                    Some(e) if end.contains(&e) => {
+                        break true;
+                    }
+                    Some(c) if c == ';' || c == '#' || c == '\\' => {
+                        value.push(c);
+                    }
+                    Some(c) => {
+                        value.push('\\');
+                        value.push(c);
+                    }
+                }
+                escape = false;
+            } else {
+                match self.ch {
+                    None | Some('\r') | Some('\n') | Some(';') | Some('#') => {
+                        break false;
+                    }
+                    Some(e) if end.contains(&e) => {
+                        break true;
+                    }
+                    Some('\\') => {
+                        escape = true;
+                    }
+                    Some(c) => {
+                        value.push(c);
+                    }
+                }
+            }
+            self.step();
+        };
+
+        if escape {
+            value.push('\\');
+        }
+
+        let mut trimmed = value.trim();
+        // Handle quoted values by removing the quotes
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
+            trimmed = &trimmed[1..trimmed.len() - 1];
+        }
+
+        (found, trimmed.to_string())
+    }
+
     pub fn parse(mut self) -> HashMap<String, Item> {
         let mut root = self.parse_section();
 
@@ -125,63 +184,6 @@ impl<C: Iterator<Item = char>> Parser<C> {
         }
 
         panic!("Unclosed section header. Expected ']', found end of file.");
-    }
-
-    fn parse_line_until(&mut self, end: &[char]) -> (bool, String) {
-        let mut value = String::new();
-        let mut escape = false;
-
-        // TODO: Handle more advanced escaping
-
-        let found = loop {
-            match self.ch {
-                None | Some('\r') | Some('\n') => {
-                    break false;
-                }
-                Some(c) if c == ';' || c == '#' => {
-                    if escape {
-                        value.push(c);
-                        escape = false;
-                    } else {
-                        break false;
-                    }
-                }
-                Some(e) if end.contains(&e) => {
-                    break true;
-                }
-                Some('\\') => {
-                    if escape {
-                        value.push('\\');
-                        escape = false;
-                    } else {
-                        escape = true;
-                    }
-                }
-                Some(c) => {
-                    if escape {
-                        value.push('\\');
-                        escape = false;
-                    }
-
-                    value.push(c);
-                }
-            }
-            self.step();
-        };
-
-        if escape {
-            value.push('\\');
-        }
-
-        let mut trimmed = value.trim();
-        // Handle quoted values by removing the quotes
-        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
-            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
-        {
-            trimmed = &trimmed[1..trimmed.len() - 1];
-        }
-
-        (found, trimmed.to_string())
     }
 
     fn parse_key_value(&mut self) -> (String, String) {
