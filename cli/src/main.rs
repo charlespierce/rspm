@@ -11,6 +11,7 @@ other = world
 # Wow, that's also a comment
 cruel = intentions
 world = Captain Planet! ; This is a comment
+"  hello  " = "mismatched'
 "#;
 
 fn main() {

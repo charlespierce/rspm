@@ -104,8 +104,7 @@ impl<C: Iterator<Item = char>> Parser<C> {
     fn parse_section_title(&mut self) -> String {
         let mut title = String::new();
 
-        // Consume the initial '[' character
-        self.step();
+        self.step(); // Consume the initial '[' character
         while let Some(c) = self.ch {
             // TODO: Parse multiple titles separated by '.'
             // Also need to run out the line and make sure there aren't any
@@ -131,6 +130,8 @@ impl<C: Iterator<Item = char>> Parser<C> {
     fn parse_line_until(&mut self, end: &[char]) -> (bool, String) {
         let mut value = String::new();
         let mut escape = false;
+
+        // TODO: Handle more advanced escaping
 
         let found = loop {
             match self.ch {
@@ -172,10 +173,15 @@ impl<C: Iterator<Item = char>> Parser<C> {
             value.push('\\');
         }
 
-        // TODO: Handle quoting by checking if the first and last character are the same quote
-        // If they are, strip those off before returning
+        let mut trimmed = value.trim();
+        // Handle quoted values by removing the quotes
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
+            trimmed = &trimmed[1..trimmed.len() - 1];
+        }
 
-        (found, value.trim().to_string())
+        (found, trimmed.to_string())
     }
 
     fn parse_key_value(&mut self) -> (String, String) {
@@ -186,7 +192,7 @@ impl<C: Iterator<Item = char>> Parser<C> {
             let (_, value) = self.parse_line_until(&[]);
             (key, value)
         } else {
-            // To match the ini npm module's behavior, if a key doesn't exist, use the value "true"
+            // To match the npm "ini" module's behavior, if a key doesn't exist, use the value "true"
             (key, String::from("true"))
         }
     }
