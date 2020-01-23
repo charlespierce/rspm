@@ -3,6 +3,7 @@ use ninny::{from_str, Item};
 const INI: &str = r#"
 toplevel = hello
 other = world
+"mismatched' = hi
 
 ; Amazing!
 # [Wow]
@@ -13,6 +14,9 @@ cruel = intentions
 world = Captain Planet! ; This is a comment
 hello\;not a comment = "mismatched'
 fun = goodbye\#also valid
+"this should have ;everything" = yes
+"this should stop #here = no
+with no quotes this ;doesn't have = a value
 "#;
 
 fn main() {

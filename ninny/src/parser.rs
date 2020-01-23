@@ -45,19 +45,19 @@ impl<C: Iterator<Item = char>> Parser<C> {
     fn parse_line_until(&mut self, end: &[char]) -> (bool, String) {
         let mut value = String::new();
         let mut escape = false;
-
-        // TODO: Handle more advanced escaping
-        // Also handle quoted comment strings (i.e. "Hello;Stuff" shouldn't be cut off at the ';')
+        let mut possibly_quoted = false;
+        let mut quoted_comment_loc = None;
 
         let found = loop {
             if escape {
                 match self.ch {
-                    None | Some('\r') | Some('\n') => {
-                        break false;
-                    }
-                    Some(e) if end.contains(&e) => {
-                        break true;
-                    }
+                    None | Some('\r') | Some('\n') => break false,
+                    Some(e) if end.contains(&e) => break true,
+                    Some('n') => value.push('\n'),
+                    Some('r') => value.push('\r'),
+                    Some('t') => value.push('\t'),
+                    Some('b') => value.push('\u{0008}'),
+                    Some('f') => value.push('\u{000C}'),
                     Some(c) if c == ';' || c == '#' || c == '\\' => {
                         value.push(c);
                     }
@@ -69,18 +69,26 @@ impl<C: Iterator<Item = char>> Parser<C> {
                 escape = false;
             } else {
                 match self.ch {
-                    None | Some('\r') | Some('\n') | Some(';') | Some('#') => {
-                        break false;
+                    None | Some('\r') | Some('\n') => break false,
+                    Some(marker) if marker == ';' || marker == '#' => {
+                        if possibly_quoted {
+                            if quoted_comment_loc.is_none() {
+                                quoted_comment_loc = Some(value.len());
+                            }
+                            value.push(marker);
+                        } else {
+                            break false;
+                        }
                     }
-                    Some(e) if end.contains(&e) => {
-                        break true;
-                    }
+                    Some(e) if end.contains(&e) => break true,
                     Some('\\') => {
                         escape = true;
                     }
-                    Some(c) => {
-                        value.push(c);
+                    Some(q) if q == '"' || q == '\'' => {
+                        possibly_quoted = true;
+                        value.push(q);
                     }
+                    Some(c) => value.push(c),
                 }
             }
             self.step();
@@ -91,11 +99,15 @@ impl<C: Iterator<Item = char>> Parser<C> {
         }
 
         let mut trimmed = value.trim();
-        // Handle quoted values by removing the quotes
         if (trimmed.starts_with('"') && trimmed.ends_with('"'))
             || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
         {
+            // Handle quoted values by removing the quotes
             trimmed = &trimmed[1..trimmed.len() - 1];
+        } else if let Some(loc) = quoted_comment_loc {
+            // If not quoted but we found a comment character,
+            // treat the comment marker as the end of the value
+            trimmed = value[0..loc].trim();
         }
 
         (found, trimmed.to_string())
