@@ -14,12 +14,33 @@ pub(crate) struct Parser<C> {
 
 impl<C: Iterator<Item = char>> Parser<C> {
     pub fn new(data: C) -> Self {
-        let mut parser = Parser { data, ch: None };
+        let mut parser = Self { data, ch: None };
 
         parser.step();
         parser
     }
 
+    pub fn parse(mut self) -> HashMap<String, Item> {
+        let mut root = self.parse_section();
+
+        while self.ch.is_some() {
+            let title = self.parse_section_title();
+            let map = self.parse_section();
+
+            // TODO: Handle tested section titles (with '.' characters in them)
+            // Have `parse_section_title` return a vector of Strings (split on non-escaped '.')
+            // Then do a root.entry(part).or_insert_with(|| Item::Section(HashMap::new())) for each part
+            // For the last we can use `map`, the rest can use `HashMap::new()`
+            // If the final key already exists, then iterate each value and insert, otherwise use it directly
+
+            try_insert(&mut root, title, Item::Section(map));
+        }
+
+        root
+    }
+}
+
+impl<C: Iterator<Item = char>> Parser<C> {
     fn step(&mut self) {
         self.ch = self.data.next();
     }
@@ -44,59 +65,49 @@ impl<C: Iterator<Item = char>> Parser<C> {
 
     fn parse_line_until(&mut self, end: &[char]) -> (bool, String) {
         let mut value = String::new();
-        let mut escape = false;
         let mut possibly_quoted = false;
         let mut quoted_comment_loc = None;
 
         let found = loop {
-            if escape {
-                match self.ch {
-                    None | Some('\r') | Some('\n') => break false,
-                    Some(e) if end.contains(&e) => break true,
-                    Some('n') => value.push('\n'),
-                    Some('r') => value.push('\r'),
-                    Some('t') => value.push('\t'),
-                    Some('b') => value.push('\u{0008}'),
-                    Some('f') => value.push('\u{000C}'),
-                    Some(c) if c == ';' || c == '#' || c == '\\' => {
-                        value.push(c);
-                    }
-                    Some(c) => {
-                        value.push('\\');
-                        value.push(c);
+            match self.ch {
+                None | Some('\r') | Some('\n') => break false,
+                Some(marker) if marker == ';' || marker == '#' => {
+                    if possibly_quoted {
+                        if quoted_comment_loc.is_none() {
+                            quoted_comment_loc = Some(value.len());
+                        }
+                        value.push(marker);
+                    } else {
+                        break false;
                     }
                 }
-                escape = false;
-            } else {
-                match self.ch {
-                    None | Some('\r') | Some('\n') => break false,
-                    Some(marker) if marker == ';' || marker == '#' => {
-                        if possibly_quoted {
-                            if quoted_comment_loc.is_none() {
-                                quoted_comment_loc = Some(value.len());
-                            }
-                            value.push(marker);
-                        } else {
+                Some(e) if end.contains(&e) => break true,
+                Some('\\') => {
+                    self.step();
+                    match self.ch {
+                        None | Some('\r') | Some('\n') => {
+                            value.push('\\');
                             break false;
                         }
+                        Some('n') => value.push('\n'),
+                        Some('r') => value.push('\r'),
+                        Some('t') => value.push('\t'),
+                        Some('b') => value.push('\x08'),
+                        Some('f') => value.push('\x0C'),
+                        Some('\\') => value.push('\\'),
+                        Some(c) => {
+                            value.push(c);
+                        }
                     }
-                    Some(e) if end.contains(&e) => break true,
-                    Some('\\') => {
-                        escape = true;
-                    }
-                    Some(q) if q == '"' || q == '\'' => {
-                        possibly_quoted = true;
-                        value.push(q);
-                    }
-                    Some(c) => value.push(c),
                 }
+                Some(q) if q == '"' || q == '\'' => {
+                    possibly_quoted = true;
+                    value.push(q);
+                }
+                Some(c) => value.push(c),
             }
             self.step();
         };
-
-        if escape {
-            value.push('\\');
-        }
 
         let mut trimmed = value.trim();
         if (trimmed.starts_with('"') && trimmed.ends_with('"'))
@@ -111,25 +122,6 @@ impl<C: Iterator<Item = char>> Parser<C> {
         }
 
         (found, trimmed.to_string())
-    }
-
-    pub fn parse(mut self) -> HashMap<String, Item> {
-        let mut root = self.parse_section();
-
-        while self.ch.is_some() {
-            let title = self.parse_section_title();
-            let map = self.parse_section();
-
-            // TODO: Handle tested section titles (with '.' characters in them)
-            // Have `parse_section_title` return a vector of Strings (split on non-escaped '.')
-            // Then do a root.entry(part).or_insert_with(|| Item::Section(HashMap::new())) for each part
-            // For the last we can use `map`, the rest can use `HashMap::new()`
-            // If the final key already exists, then iterate each value and insert, otherwise use it directly
-
-            try_insert(&mut root, title, Item::Section(map));
-        }
-
-        root
     }
 
     fn parse_section(&mut self) -> HashMap<String, Item> {
@@ -173,29 +165,27 @@ impl<C: Iterator<Item = char>> Parser<C> {
     }
 
     fn parse_section_title(&mut self) -> String {
-        let mut title = String::new();
-
         self.step(); // Consume the initial '[' character
-        while let Some(c) = self.ch {
-            // TODO: Parse multiple titles separated by '.'
-            // Also need to run out the line and make sure there aren't any
-            // extra characters on the same line as the section (other than whitespace / comments)
-            match c {
-                '\r' | '\n' => {
+        let (found, title) = self.parse_line_until(&[']']);
+        // TODO: Parse multiple titles separated by '.'
+        // Also need to run out the line and make sure there aren't any
+        // extra characters on the same line as the section (other than whitespace / comments)
+        if !found {
+            match self.ch {
+                Some('\r') | Some('\n') => {
                     panic!("Unclosed section header. Expected ']', found end of line.");
                 }
-                ']' => {
-                    self.step();
-                    return title.trim().to_string();
+                Some(c) => {
+                    panic!("Unexpected character found. Expected ']', found '{}'", c);
                 }
-                _ => {
-                    self.step();
-                    title.push(c);
+                None => {
+                    panic!("Unclosed section header. Expected ']', found end of file.");
                 }
             }
+        } else {
+            self.step(); // Consume the final ']' character
+            title.trim().to_string()
         }
-
-        panic!("Unclosed section header. Expected ']', found end of file.");
     }
 
     fn parse_key_value(&mut self) -> (String, String) {
