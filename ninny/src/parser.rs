@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::iter::Extend;
 
 pub enum Item {
     Value(String),
@@ -24,16 +25,20 @@ impl<C: Iterator<Item = char>> Parser<C> {
         let mut root = self.parse_section();
 
         while self.ch.is_some() {
-            let title = self.parse_section_title();
+            let titles = self.parse_section_titles();
             let map = self.parse_section();
 
-            // TODO: Handle tested section titles (with '.' characters in them)
-            // Have `parse_section_title` return a vector of Strings (split on non-escaped '.')
-            // Then do a root.entry(part).or_insert_with(|| Item::Section(HashMap::new())) for each part
-            // For the last we can use `map`, the rest can use `HashMap::new()`
-            // If the final key already exists, then iterate each value and insert, otherwise use it directly
+            let section = titles.into_iter().fold(&mut root, |current, title| {
+                match current
+                    .entry(title.clone())
+                    .or_insert_with(|| Item::Section(HashMap::new()))
+                {
+                    Item::Section(ref mut section) => section,
+                    _ => panic!("Section already exists as a value: {}", title),
+                }
+            });
 
-            try_insert(&mut root, title, Item::Section(map));
+            section.extend(map);
         }
 
         root
@@ -164,28 +169,40 @@ impl<C: Iterator<Item = char>> Parser<C> {
         section
     }
 
-    fn parse_section_title(&mut self) -> String {
+    fn parse_section_titles(&mut self) -> Vec<String> {
         self.step(); // Consume the initial '[' character
-        let (found, title) = self.parse_line_until(&[']']);
-        // TODO: Parse multiple titles separated by '.'
-        // Also need to run out the line and make sure there aren't any
-        // extra characters on the same line as the section (other than whitespace / comments)
-        if !found {
-            match self.ch {
-                Some('\r') | Some('\n') => {
-                    panic!("Unclosed section header. Expected ']', found end of line.");
+        let mut titles = Vec::new();
+
+        loop {
+            let (found, title_part) = self.parse_line_until(&[']', '.']);
+
+            if !found {
+                match self.ch {
+                    Some('\r') | Some('\n') => {
+                        panic!("Unclosed section header. Expected ']', found end of line.");
+                    }
+                    Some(c) => {
+                        panic!("Unexpected character found. Expected ']', found '{}'", c);
+                    }
+                    None => {
+                        panic!("Unclosed section header. Expected ']', found end of file.");
+                    }
                 }
-                Some(c) => {
-                    panic!("Unexpected character found. Expected ']', found '{}'", c);
-                }
-                None => {
-                    panic!("Unclosed section header. Expected ']', found end of file.");
+            } else {
+                let delim = self.ch;
+
+                self.step();
+                titles.push(title_part);
+
+                if delim == Some(']') {
+                    break;
                 }
             }
-        } else {
-            self.step(); // Consume the final ']' character
-            title.trim().to_string()
         }
+
+        // TODO: Run out the line to make sure there aren't any values on the same line?
+
+        titles
     }
 
     fn parse_key_value(&mut self) -> (String, String) {

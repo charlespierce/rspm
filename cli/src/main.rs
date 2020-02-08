@@ -17,6 +17,12 @@ fun = goodbye\#also valid
 "this should have ;everything" = yes
 "this should stop #here = no
 with no quotes this ;doesn't have = a value
+
+[goodbye.amazing.nested]
+test=Wow!
+
+[goodbye\.amazing.nested]
+test=Should be different
 "#;
 
 fn main() {
