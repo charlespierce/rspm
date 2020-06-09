@@ -1,4 +1,4 @@
-use ninny::{from_str, Item};
+use node_ini::{from_str, Item};
 
 const INI: &str = r#"
 toplevel = hello

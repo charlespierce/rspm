@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 rspm-config = { path = "../config" }
-ninny = { path = "../ninny" }
+node-ini = { path = "../node-ini" }

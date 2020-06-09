@@ -1,5 +1,5 @@
 [package]
-name = "ninny"
+name = "node-ini"
 version = "0.1.0"
 authors = ["Charles Pierce <cpierce.grad@gmail.com>"]
 edition = "2018"
